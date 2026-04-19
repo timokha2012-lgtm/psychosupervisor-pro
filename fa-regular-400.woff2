@@ -1,0 +1,300 @@
+/* ============================================
+   PsychoSupervisor Pro — Access Key System
+   Система продажных ключей доступа
+   
+   Как работает:
+   1. Вы генерируете ключи (формат: PSP-XXXX-XXXX-XXXX)
+   2. Продаёте ключ студенту (Telegram/сайт/лично)
+   3. Студент вводит ключ → получает доступ на 30/90 дней
+   4. Ключ проверяется через простой алгоритм (хэш)
+   
+   Для усиления — подключите Supabase/Firebase для хранения
+   ============================================ */
+
+const AccessSystem = {
+
+  // ===== CONFIG =====
+  // Срок действия по умолчанию: 30 дней
+  DEFAULT_DAYS: 30,
+
+  // Версия алгоритма ключей (меняйте при смене схемы)
+  KEY_VERSION: 'V1',
+
+  // Соль для генерации ключей (МЕНЯЙТЕ НА СВОЮ!)
+  SALT: 'PSP2026DMITRY',
+
+  // ===== VALID ACCESS KEYS =====
+  // Здесь хранятся мастер-ключи (для демо и тестирования)
+  // В продакшене → используйте сервер или зашифруйте
+  MASTER_KEYS: {
+    'PSP-DEMO-2026-FREE': { days: 365, plan: 'demo', label: 'Демо-доступ', ai: false },
+    'PSP-BETA-TEST-2026': { days: 90,  plan: 'pro',  label: 'Бета-тестер', ai: true  },
+    'PSP-TRAIN-FULL-PRO': { days: 30,  plan: 'pro',  label: 'Профессионал', ai: true  },
+  },
+
+  // ===== PLANS =====
+  PLANS: {
+    free:  { name: 'Базовый',        ai: false, clients: 5,  sessions: 10,  transcripts: 3   },
+    demo:  { name: 'Демо',           ai: false, clients: 18, sessions: 999, transcripts: 999 },
+    basic: { name: 'Студент',        ai: false, clients: 18, sessions: 999, transcripts: 999 },
+    pro:   { name: 'Профессионал',   ai: true,  clients: 18, sessions: 999, transcripts: 999 },
+    team:  { name: 'Команда',        ai: true,  clients: 18, sessions: 999, transcripts: 999 },
+  },
+
+  // ===== STATE =====
+  _accessData: null,
+
+  // ===== INIT =====
+  init() {
+    this._accessData = this._loadAccess();
+    if (this._accessData && this._isExpired(this._accessData)) {
+      this._clearAccess();
+      return;
+    }
+  },
+
+  // ===== CHECK ACCESS =====
+  hasAccess() {
+    if (!this._accessData) this._accessData = this._loadAccess();
+    if (!this._accessData) return false;
+    if (this._isExpired(this._accessData)) {
+      this._clearAccess();
+      return false;
+    }
+    return true;
+  },
+
+  getPlan() {
+    if (!this._accessData) return 'free';
+    return this._accessData.plan || 'basic';
+  },
+
+  getPlanData() {
+    return this.PLANS[this.getPlan()] || this.PLANS.free;
+  },
+
+  isAIEnabled() {
+    const data = this._accessData;
+    if (!data) return false;
+    const planData = this.PLANS[data.plan];
+    return planData ? planData.ai : false;
+  },
+
+  getDaysLeft() {
+    if (!this._accessData) return 0;
+    const now = Date.now();
+    const expires = this._accessData.expires;
+    if (!expires) return 0;
+    return Math.max(0, Math.ceil((expires - now) / 86400000));
+  },
+
+  getExpiryDate() {
+    if (!this._accessData) return null;
+    return new Date(this._accessData.expires).toLocaleDateString('ru-RU');
+  },
+
+  getAccessLabel() {
+    if (!this._accessData) return 'Нет доступа';
+    return this._accessData.label || 'Доступ активен';
+  },
+
+  // ===== ACTIVATE KEY =====
+  activateKey(rawKey) {
+    const key = rawKey.trim().toUpperCase();
+
+    // Check master keys first (hardcoded for demo)
+    if (this.MASTER_KEYS[key]) {
+      const cfg = this.MASTER_KEYS[key];
+      const data = {
+        key,
+        plan: cfg.plan,
+        label: cfg.label,
+        activated: Date.now(),
+        expires: Date.now() + cfg.days * 86400000,
+        days: cfg.days
+      };
+      this._saveAccess(data);
+      this._accessData = data;
+      return { ok: true, plan: cfg.plan, label: cfg.label, days: cfg.days };
+    }
+
+    // Validate generated key structure
+    const validation = this._validateKey(key);
+    if (!validation.valid) {
+      return { ok: false, error: validation.error };
+    }
+
+    // Save access
+    const data = {
+      key,
+      plan: validation.plan,
+      label: validation.label,
+      activated: Date.now(),
+      expires: Date.now() + validation.days * 86400000,
+      days: validation.days
+    };
+    this._saveAccess(data);
+    this._accessData = data;
+    return { ok: true, plan: validation.plan, label: validation.label, days: validation.days };
+  },
+
+  // ===== KEY VALIDATION ALGORITHM =====
+  // Format: PSP-PPPP-DDDD-CCCC
+  // PSP = prefix
+  // PPPP = plan code (BASE, PROF, TEAM)
+  // DDDD = days encoded (B030, P090, T365)
+  // CCCC = checksum
+  _validateKey(key) {
+    const parts = key.split('-');
+    if (parts.length !== 4) return { valid: false, error: 'Неверный формат ключа' };
+    if (parts[0] !== 'PSP') return { valid: false, error: 'Ключ должен начинаться с PSP-' };
+
+    const planCode = parts[1];
+    const daysCode = parts[2];
+    const checksum = parts[3];
+
+    // Decode plan
+    const planMap = { 'BASE': 'basic', 'PROF': 'pro', 'TEAM': 'team' };
+    const plan = planMap[planCode];
+    if (!plan) return { valid: false, error: 'Неверный код плана в ключе' };
+
+    // Decode days
+    const daysMap = { 'B030': 30, 'B090': 90, 'B365': 365, 'P030': 30, 'P090': 90, 'P365': 365, 'T030': 30, 'T090': 90, 'T365': 365 };
+    const days = daysMap[daysCode];
+    if (!days) return { valid: false, error: 'Неверный период в ключе' };
+
+    // Validate checksum (simple CRC-like)
+    const expected = this._generateChecksum(planCode + '-' + daysCode);
+    if (checksum !== expected) return { valid: false, error: 'Ключ недействителен или уже использован' };
+
+    const planLabels = { basic: 'Студент', pro: 'Профессионал', team: 'Команда' };
+    return {
+      valid: true,
+      plan,
+      days,
+      label: `${planLabels[plan]} — ${days} дней`
+    };
+  },
+
+  // ===== CHECKSUM GENERATOR =====
+  // Для генерации ключей используйте: AccessSystem.generateKey('PROF', 'P090')
+  _generateChecksum(input) {
+    const str = input + this.SALT;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    const hex = Math.abs(hash).toString(16).toUpperCase().padStart(4, '0').substring(0, 4);
+    return hex;
+  },
+
+  // ===== KEY GENERATOR (используйте для продажи!) =====
+  generateKey(planCode = 'PROF', daysCode = 'P030') {
+    const checksum = this._generateChecksum(planCode + '-' + daysCode);
+    return `PSP-${planCode}-${daysCode}-${checksum}`;
+  },
+
+  // ===== BATCH KEY GENERATOR =====
+  generateBatch(planCode, daysCode, count = 10) {
+    // Add unique salt per key for batch
+    const keys = [];
+    for (let i = 0; i < count; i++) {
+      const uniqueSalt = String(Date.now() + i).slice(-4);
+      const input = planCode + '-' + daysCode + '-' + uniqueSalt;
+      const checksum = this._generateChecksum(input);
+      keys.push(`PSP-${planCode}-${daysCode}-${checksum}`);
+    }
+    return keys;
+  },
+
+  // ===== DEACTIVATE =====
+  deactivate() {
+    this._clearAccess();
+    this._accessData = null;
+  },
+
+  // ===== STORAGE =====
+  _saveAccess(data) {
+    try {
+      localStorage.setItem('psp_access', btoa(JSON.stringify(data)));
+    } catch(e) {}
+  },
+
+  _loadAccess() {
+    try {
+      const raw = localStorage.getItem('psp_access');
+      if (!raw) return null;
+      return JSON.parse(atob(raw));
+    } catch(e) {
+      return null;
+    }
+  },
+
+  _clearAccess() {
+    localStorage.removeItem('psp_access');
+    this._accessData = null;
+  },
+
+  _isExpired(data) {
+    if (!data || !data.expires) return true;
+    return Date.now() > data.expires;
+  },
+
+  // ===== UI HELPERS =====
+  renderAccessBadge() {
+    if (!this.hasAccess()) return '<span style="color:#dc2626">❌ Нет доступа</span>';
+    const plan = this.getPlanData();
+    const days = this.getDaysLeft();
+    const color = days < 7 ? '#dc2626' : days < 14 ? '#D97706' : '#059669';
+    return `<span style="color:${color}">✅ ${plan.name} · ${days} дн.</span>`;
+  },
+
+  getStatusInfo() {
+    if (!this.hasAccess()) {
+      return { active: false, plan: 'free', daysLeft: 0, label: 'Активируйте ключ доступа', color: '#dc2626' };
+    }
+    return {
+      active: true,
+      plan: this.getPlan(),
+      daysLeft: this.getDaysLeft(),
+      label: `${this.getPlanData().name} · ${this.getDaysLeft()} дней`,
+      color: this.getDaysLeft() < 7 ? '#dc2626' : '#059669',
+      expires: this.getExpiryDate()
+    };
+  }
+};
+
+// Auto-init
+document.addEventListener('DOMContentLoaded', () => AccessSystem.init());
+
+/* ============================================
+   ИНСТРУКЦИЯ ДЛЯ ПРОДАВЦА (Дмитрий):
+   
+   1. ГЕНЕРАЦИЯ КЛЮЧЕЙ:
+      В консоли браузера введите:
+      
+      // 30-дневный ключ "Студент":
+      AccessSystem.generateKey('BASE', 'B030')
+      
+      // 90-дневный ключ "Профессионал":
+      AccessSystem.generateKey('PROF', 'P090')
+      
+      // Годовой ключ "Команда":
+      AccessSystem.generateKey('TEAM', 'T365')
+   
+   2. ПРОДАЖА:
+      - Принимаете оплату в Telegram (@Вашканал)
+      - Отправляете ключ покупателю
+      - Покупатель вводит ключ в приложении
+   
+   3. ТАРИФЫ (рекомендуемые цены):
+      - Студент 30 дней: 490-990 ₽
+      - Профессионал 90 дней: 1990-2990 ₽
+      - Команда год (5 студентов): 4990-9990 ₽
+   
+   4. DEMO-КЛЮЧИ (бесплатно для ознакомления):
+      PSP-DEMO-2026-FREE  (365 дней, без AI)
+      PSP-BETA-TEST-2026  (90 дней, с AI)
+   ============================================ */
