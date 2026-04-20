@@ -1,388 +1,207 @@
 /* ============================================
-   PsychoSupervisor Pro — AI Engine
-   OpenRouter proxy (works from Russia without VPN)
-   Supports: Claude 3 Haiku, GPT-4o-mini, Gemini Flash
+   PsychoSupervisor Pro — AI Engine v3
+   Anthropic Claude API через Vercel прокси
    ============================================ */
 
 const AIEngine = {
 
-  // ===== CONFIG =====
-  // OpenRouter.ai — работает из России, CORS разрешён, оплата картой РФ
   ENDPOINT: 'https://psych-trainer-v2.vercel.app/api/claude',
-
-  // Anthropic Claude API через Vercel (качество выше чем OpenRouter)
-  ENDPOINTS: [
-    'https://psych-trainer-v2.vercel.app/api/claude',
-  ],
-
-  // Рекомендуемые модели (дешевле → дороже)
-  MODELS: {
-    fast:    'google/gemini-flash-1.5',          // $0.075/1M tokens — быстрый, дешёвый
-    smart:   'anthropic/claude-3-haiku',          // $0.25/1M tokens — лучший для диалога
-    premium: 'openai/gpt-4o-mini',               // $0.15/1M tokens — GPT качество
-    free:    'mistralai/mistral-7b-instruct:free' // БЕСПЛАТНО (лимит)
-  },
-
-  // ===== STATE =====
-  _apiKey: null,
-  _model: 'google/gemini-flash-1.5',
-  _useFallback: false,
   _requestCount: 0,
 
-  // ===== INIT =====
-  init() {
-    this._apiKey = this.loadKey();
-    const savedModel = localStorage.getItem('psp_model');
-    if (savedModel) this._model = savedModel;
-  },
+  init() {},
 
-  // ===== KEY MANAGEMENT =====
-  DEFAULT_KEY: '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',
+  hasKey() { return true; },
+  saveKey(key) { localStorage.setItem('psp_openrouter_key', key.trim()); },
+  loadKey() { return localStorage.getItem('psp_openrouter_key') || ''; },
+  clearKey() { localStorage.removeItem('psp_openrouter_key'); },
+  setModel(model) { localStorage.setItem('psp_model', model); },
 
-  loadKey() {
-    return localStorage.getItem('psp_openrouter_key') || this.DEFAULT_KEY;
-  },
-
-  saveKey(key) {
-    localStorage.setItem('psp_openrouter_key', key.trim());
-    this._apiKey = key.trim();
-  },
-
-  clearKey() {
-    localStorage.removeItem('psp_openrouter_key');
-    this._apiKey = null;
-  },
-
-  hasKey() {
-    return true; // Ключ встроен в прокси-сервер
-  },
-
-  setModel(model) {
-    this._model = model;
-    localStorage.setItem('psp_model', model);
-  },
-
-  // ===== CORE REQUEST =====
   async chat(messages, options = {}) {
-    if (!this.hasKey()) {
-      throw new Error('NO_KEY');
-    }
-
-    // Anthropic API format
-    const msgs = messages.filter(m => m.role !== 'system');
     const systemMsg = messages.find(m => m.role === 'system');
+    const userMsgs = messages.filter(m => m.role !== 'system');
     const body = {
       model: 'claude-sonnet-4-20250514',
-      max_tokens: options.maxTokens || 500,
+      max_tokens: options.maxTokens || 600,
       system: systemMsg ? systemMsg.content : undefined,
-      messages: msgs,
+      messages: userMsgs,
     };
-
-    let lastError = null;
-
-    for (const endpoint of this.ENDPOINTS) {
-      try {
-        const resp = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this._apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': window.location.origin,
-            'X-Title': 'PsychoSupervisorPro'
-          },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(30000) // 30s timeout
-        });
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          if (resp.status === 401) throw new Error('INVALID_KEY');
-          if (resp.status === 429) throw new Error('RATE_LIMIT');
-          if (resp.status === 402) throw new Error('NO_CREDITS');
-          throw new Error(err.error?.message || `HTTP ${resp.status}`);
-        }
-
-        const data = await resp.json();
-        this._requestCount++;
-        // Anthropic format
-        if (data.content) return data.content.map(b => b.text || '').join('');
-        // OpenRouter fallback
-        return data.choices?.[0]?.message?.content || '';
-
-      } catch (e) {
-        lastError = e;
-        if (e.message === 'INVALID_KEY' || e.message === 'NO_CREDITS') throw e;
-        // Try next endpoint on network error
-        continue;
-      }
-    }
-
-    throw lastError || new Error('ALL_ENDPOINTS_FAILED');
-  },
-
-  // ===== CLIENT RESPONSE GENERATOR =====
-  async generateClientResponse(client, sessionMessages, studentMessage, sessionState) {
-    const systemPrompt = this._buildClientSystemPrompt(client, sessionState);
-
-    // Build conversation history (last 10 exchanges)
-    const history = sessionMessages.slice(-20).map(m => ({
-      role: m.role === 'student' ? 'user' : m.role === 'client' ? 'assistant' : null,
-      content: m.text
-    })).filter(m => m.role !== null);
-
-    history.push({ role: 'user', content: studentMessage });
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...history
-    ];
-
     try {
-      const response = await this.chat(messages, {
-        maxTokens: 350,
-        temperature: 0.85
+      const resp = await fetch(this.ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(45000)
       });
-      let text = response.trim();
-      // Если обрезало на полуслове — дописываем многоточие
-      if (text && !text.match(/[.!?…)"'\u2019\u201d\n]$/)) {
-        // Обрезаем до последней точки/восклицания/вопроса
-        const lastPunct = Math.max(
-          text.lastIndexOf('.'),
-          text.lastIndexOf('!'),
-          text.lastIndexOf('?'),
-          text.lastIndexOf('…')
-        );
-        if (lastPunct > text.length * 0.5) {
-          text = text.substring(0, lastPunct + 1);
-        } else {
-          text = text + '...';
-        }
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error?.message || `HTTP ${resp.status}`);
       }
-      return text;
-    } catch (e) {
-      return null;
-    }
+      const data = await resp.json();
+      this._requestCount++;
+      if (data.content) return data.content.map(b => b.text || '').join('');
+      return data.choices?.[0]?.message?.content || '';
+    } catch (e) { throw e; }
   },
 
-  _buildClientSystemPrompt(client, sessionState) {
+  async generateClientResponse(client, sessionMessages, studentMessage, sessionState) {
     const trustPct = sessionState.trust || client.trust;
     const anxietyPct = sessionState.anxiety || client.anxiety;
     const opennessPct = sessionState.openness || client.openness;
+    const system = `Ты играешь роль клиента на психологической консультации. Веди себя СТРОГО по роли.
 
-    return `Ты играешь роль клиента на психологической консультации. Веди себя СТРОГО по роли, не выходи из неё.
-
-ПРОФИЛЬ КЛИЕНТА:
+ПРОФИЛЬ:
 - Имя: ${client.name}, ${client.age}
 - Проблема: ${client.type}
 - Запрос: ${client.request}
 - История: ${client.history}
-- Черты личности: ${client.traits.join(', ')}
+- Черты: ${client.traits.join(', ')}
 
-ТЕКУЩЕЕ СОСТОЯНИЕ (0-100):
-- Тревога: ${anxietyPct}% ${anxietyPct > 70 ? '(очень высокая, заметна в речи)' : anxietyPct > 40 ? '(умеренная)' : '(низкая)'}
-- Доверие к психологу: ${trustPct}% ${trustPct < 30 ? '(низкое — защищаешься, закрыт)' : trustPct < 60 ? '(среднее — осторожен)' : '(высокое — более открыт)'}
+СОСТОЯНИЕ:
+- Тревога: ${anxietyPct}% ${anxietyPct > 70 ? '(очень высокая)' : anxietyPct > 40 ? '(умеренная)' : '(низкая)'}
+- Доверие: ${trustPct}% ${trustPct < 30 ? '(низкое — закрыт)' : trustPct < 60 ? '(среднее)' : '(высокое — открыт)'}
 - Открытость: ${opennessPct}%
 
-ПРАВИЛА ПОВЕДЕНИЯ:
-1. Отвечай ТОЛЬКО от имени клиента. Никаких комментариев, объяснений "как клиент".
-2. 2-4 предложения. ОБЯЗАТЕЛЬНО заканчивай мысль до последней точки. Не обрывайся на полуслове.
-3. Учитывай уровень доверия: при низком — защищаешься, при высоком — раскрываешься.
-4. При директивных советах психолога — сопротивляйся естественно.
-5. Периодически добавляй паузы: "...", "(молчит)", "(вздыхает)".
-6. Говори разговорным русским языком. Никакого книжного стиля.
-7. Не будь слишком позитивным — настоящие клиенты сопротивляются изменениям.
-8. Иногда уходи от темы, меняй предмет разговора — это реалистично.
-9. КРИТИЧНО: всегда заканчивай мысль до конца! Не обрывайся на полуслове. Каждое предложение должно быть завершённым.
+ПРАВИЛА: 2-4 предложения. Разговорный русский. Сопротивляйся советам. Периодически "(молчит)", "(вздыхает)". ОБЯЗАТЕЛЬНО заканчивай мысль.
+Отвечай только репликой клиента, без кавычек.`;
 
-Отвечай только репликой клиента, без кавычек и пояснений.`;
-  },
-
-  // ===== SUPERVISOR HINT GENERATOR =====
-  async generateSupervisorHint(client, sessionMessages, studentMessage, sessionState) {
-    const systemPrompt = this._buildSupervisorSystemPrompt(client, sessionState, 'hint');
-
-    const lastExchanges = sessionMessages.slice(-8).map(m => {
-      const role = m.role === 'student' ? 'Психолог' : m.role === 'client' ? 'Клиент' : 'Система';
-      return `${role}: ${m.text}`;
-    }).join('\n');
-
-    const userMsg = `Последний обмен репликами:\n${lastExchanges}\n\nПсихолог только что написал: "${studentMessage}"\n\nДай КРАТКУЮ подсказку (1-2 предложения) что сейчас важно.`;
+    const history = sessionMessages.slice(-20).map(m => ({
+      role: m.role === 'student' ? 'user' : 'assistant',
+      content: m.text
+    }));
+    history.push({ role: 'user', content: studentMessage });
 
     try {
-      const response = await this.chat([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMsg }
-      ], { maxTokens: 120, temperature: 0.7 });
-      return '💡 ' + response.trim();
-    } catch (e) {
-      return null;
-    }
-  },
-
-  // ===== SUPERVISOR DIRECT ADVICE =====
-  async generateSupervisorAdvice(client, sessionMessages, question, sessionState) {
-    const systemPrompt = this._buildSupervisorSystemPrompt(client, sessionState, 'advice');
-
-    const context = sessionMessages.slice(-12).map(m => {
-      const role = m.role === 'student' ? 'Психолог' : m.role === 'client' ? 'Клиент' : null;
-      return role ? `${role}: ${m.text}` : null;
-    }).filter(Boolean).join('\n');
-
-    const userMsg = question
-      ? `Контекст сессии:\n${context}\n\nВопрос студента: "${question}"`
-      : `Контекст сессии:\n${context}\n\nДай рекомендацию по текущей ситуации в сессии.`;
-
-    try {
-      const response = await this.chat([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMsg }
-      ], { maxTokens: 300, temperature: 0.7 });
-      return response.trim();
-    } catch (e) {
-      return null;
-    }
-  },
-
-  // ===== SESSION ANALYSIS =====
-  async analyzeSessionFull(client, sessionMessages, sessionState) {
-    const systemPrompt = `Ты — Арина, супервизор-психолог с 15-летним стажем. Пишешь разбор сессии как живой человек — прямо, конкретно, с цитатами из диалога. Не как робот с шаблонами, а как наставник который реально читал каждую реплику и заметил детали. Говоришь без буллетов и лишних слов. Сочетаешь КПТ, МИ, DBT, ACT и духовное измерение.`;
-
-    const transcript = sessionMessages
-      .filter(m => m.role !== 'system')
-      .map(m => {
-        if (m.role === 'client') return `КЛИЕНТ: ${m.text}`;
-        if (m.role === 'student') return `ПСИХОЛОГ: ${m.text}`;
-        return null;
-      }).filter(Boolean).join('\n');
-
-    const clientInfo = `Клиент: ${client.name}, ${client.age}. Тип: ${client.type}. Запрос: ${client.request}.`;
-
-    const prompt = `${clientInfo}
-
-ТРАНСКРИПТ СЕССИИ:
-${transcript}
-
-Напиши детальный супервизорский разбор в JSON:
-{
-  "score": число 0-100,
-  "summary": "3-4 предложения — кто этот клиент, что происходило в сессии, куда движется работа",
-  "worked": "Подробно (4-6 предложений) ЧТО СРАБОТАЛО — с конкретными цитатами из диалога ('когда ты сказал ... — клиент открылся потому что...')",
-  "missed": "Подробно (4-6 предложений) ЧТО УПУСТИЛ — конкретные моменты с цитатами, почему это важно, что за этим стоит психологически",
-  "errors": [{"title": "название ошибки", "text": "подробное объяснение с цитатой из диалога", "suggestion": "конкретная альтернативная фраза которую можно было сказать"}],
-  "strengths": ["конкретная сильная сторона с примером из диалога"],
-  "keyMoments": [{"label": "название момента", "text": "что произошло и почему это важно психологически"}],
-  "clientProfile": "2-3 предложения — психологический портрет клиента: защиты, паттерны, мотивация",
-  "nextSession": "Конкретный план следующей встречи: с чего начать, какую тему не отпускать, что исследовать",
-  "recommendations": ["конкретная рекомендация студенту для роста"]
-}
-Только JSON. Пиши развёрнуто, цитируй реплики, будь конкретным.`;
-
-    try {
-      const response = await this.chat([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt }
-      ], { maxTokens: 800, temperature: 0.6, model: 'anthropic/claude-3-haiku' });
-
-      // Parse JSON from response
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      const response = await this.chat([{ role: 'system', content: system }, ...history], { maxTokens: 350 });
+      let text = response.trim();
+      if (text && !text.match(/[.!?…)"'
+]$/)) {
+        const lastPunct = Math.max(text.lastIndexOf('.'), text.lastIndexOf('!'), text.lastIndexOf('?'));
+        if (lastPunct > text.length * 0.5) text = text.substring(0, lastPunct + 1);
+        else text = text + '...';
       }
-      return null;
-    } catch (e) {
-      return null;
-    }
+      return text;
+    } catch (e) { return null; }
   },
 
-  // ===== TRANSCRIPT ANALYSIS =====
-  async analyzeTranscriptAI(text, context) {
-    const systemPrompt = `Ты — Арина, супервизор-психолог с 15-летним стажем. Анализируешь реальные сессии психологов. Говоришь прямо, живо, с юмором — но всегда точно. Видишь то что терапевт не видит. Пишешь по-русски связным текстом без буллетов и списков с дефисами. Цитируешь конкретные фразы из сессии. Интегрируешь КПТ, МИ, DBT, ACT, гуманистический и духовный подход.`;
-
-    const ctx = context?.trim() ? `\nКонтекст от терапевта: ${context}\n` : "";
-    const prompt = `Транскрибация сессии:${ctx}\n\n${text}\n\nДай полный супервизорский разбор. Пиши как живой опытный супервизор — прямо, с характером, без пустых слов. Цитируй конкретные фразы из текста.\n\nСтруктура:\n\n**ЧТО СРАБОТАЛО** — конкретно, с цитатами из текста\n\n**ЧТО УПУСТИЛ** — прямо и честно, без смягчений, с цитатами\n\n**КЛЮЧЕВЫЕ МОМЕНТЫ** — что важно понять про этого клиента\n\n**ПЛАН НА СЛЕДУЮЩУЮ ВСТРЕЧУ** — конкретные темы, вопросы, задачи`;
-
-    try {
-      const response = await this.chat([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt }
-      ], { maxTokens: 1200, temperature: 0.7 });
-
-      // Возвращаем как текст для живого отображения
-      return { freeText: response.trim() };
-    } catch (e) {
-      return null;
-    }
-  },
-
-  // ===== SYSTEM PROMPT FOR SUPERVISOR =====
-  _buildSupervisorSystemPrompt(client, sessionState, mode) {
+  async generateSupervisorHint(client, sessionMessages, studentMessage, sessionState) {
     const trust = sessionState.trust || client.trust;
     const anxiety = sessionState.anxiety || client.anxiety;
     const phase = sessionState.phase || 'contact';
+    const phaseLabels = { contact: 'установление контакта', exploration: 'исследование', insight: 'инсайт', change: 'изменение' };
+    const system = `Ты — Арина, супервизор-психолог 15 лет стажа. Прямо, живо, одна подсказка как живой человек смотрит через плечо. 1-2 предложения без буллетов.
+Клиент: ${client.name}, ${client.age}. Проблема: ${client.type}. Фаза: ${phaseLabels[phase]}. Доверие: ${trust}%. Тревога: ${anxiety}%.`;
+    const lastExchanges = sessionMessages.slice(-6).map(m => `${m.role === 'student' ? 'Психолог' : 'Клиент'}: ${m.text}`).join('
+');
+    try {
+      const response = await this.chat([
+        { role: 'system', content: system },
+        { role: 'user', content: `${lastExchanges}
 
-    const phaseLabels = {
-      contact: 'установление контакта',
-      exploration: 'исследование проблемы',
-      insight: 'формирование инсайта',
-      change: 'работа с изменением'
-    };
+Психолог написал: "${studentMessage}"
 
-    const base = `Ты — Арина, супервизор-психолог с 15-летним стажем. Работаешь со студентами-психологами. Говоришь прямо, живо, иногда с юмором — но всегда точно и по делу. Видишь то, что студент не замечает. Пишешь связным текстом без буллетов и списков. Сочетаешь КПТ, МИ, DBT, ACT, гуманистический подход и духовное измерение.
-
-КЛИЕНТ: ${client.name}, ${client.age}
-Проблема: ${client.type}
-Запрос: ${client.request}
-История: ${client.history}
-
-СОСТОЯНИЕ СЕССИИ:
-- Фаза: ${phaseLabels[phase] || phase}
-- Доверие: ${trust}%
-- Тревога: ${anxiety}%`;
-
-    if (mode === 'hint') {
-      return base + `
-
-Дай ОДНУ короткую подсказку (1-2 предложения) — конкретную и живую. Никаких лекций. Говори как живой человек который смотрит через плечо.`;
-    }
-
-    return base + `
-
-Дай конкретный совет — что сделать прямо сейчас. 2-4 предложения. Говори как живой супервизор, не как учебник.`;
+Одна подсказка:` }
+      ], { maxTokens: 120 });
+      return '💡 ' + response.trim();
+    } catch (e) { return null; }
   },
 
-  // ===== AUDIO TRANSCRIPTION (Whisper via OpenRouter) =====
-  async transcribeAudio(audioFile) {
-    // Note: OpenRouter doesn't support Whisper directly
-    // We simulate transcription for now and note this limitation
-    // For real transcription: use AssemblyAI or Deepgram (both work in Russia)
-    throw new Error('WHISPER_NOT_SUPPORTED');
+  async generateSupervisorAdvice(client, sessionMessages, question, sessionState) {
+    const trust = sessionState.trust || client.trust;
+    const anxiety = sessionState.anxiety || client.anxiety;
+    const phase = sessionState.phase || 'contact';
+    const phaseLabels = { contact: 'установление контакта', exploration: 'исследование', insight: 'инсайт', change: 'изменение' };
+    const system = `Ты — Арина, супервизор-психолог 15 лет стажа. Прямо, живо, конкретный совет — что делать прямо сейчас. 2-4 предложения. Без буллетов.
+Клиент: ${client.name}, ${client.age}. Проблема: ${client.type}. Фаза: ${phaseLabels[phase]}. Доверие: ${trust}%. Тревога: ${anxiety}%.`;
+    const context = sessionMessages.slice(-12).map(m => {
+      if (m.role === 'student') return `Психолог: ${m.text}`;
+      if (m.role === 'client') return `Клиент: ${m.text}`;
+      return null;
+    }).filter(Boolean).join('
+');
+    const userMsg = question ? `Контекст:
+${context}
+
+Вопрос: "${question}"` : `Контекст:
+${context}
+
+Дай рекомендацию.`;
+    try {
+      const response = await this.chat([{ role: 'system', content: system }, { role: 'user', content: userMsg }], { maxTokens: 280 });
+      return response.trim();
+    } catch (e) { return null; }
   },
 
-  // ===== CONNECTION TEST =====
+  async analyzeSessionFull(client, sessionMessages, sessionState) {
+    const system = `Ты — Арина, супервизор-психолог 15 лет стажа. Разбор сессии — прямо, конкретно, с цитатами. Без буллетов. КПТ, МИ, DBT, ACT, духовное измерение.`;
+    const transcript = sessionMessages.filter(m => m.role !== 'system').map(m => {
+      if (m.role === 'client') return `КЛИЕНТ: ${m.text}`;
+      if (m.role === 'student') return `ПСИХОЛОГ: ${m.text}`;
+      return null;
+    }).filter(Boolean).join('
+');
+    const prompt = `Клиент: ${client.name}, ${client.age}. Тип: ${client.type}. Запрос: ${client.request}.
+
+ТРАНСКРИПТ:
+${transcript}
+
+JSON разбор:
+{
+  "score": число 0-100,
+  "summary": "3-4 предложения о сессии",
+  "worked": "ЧТО СРАБОТАЛО с цитатами",
+  "missed": "ЧТО УПУСТИЛ с цитатами",
+  "errors": [{"title": "ошибка", "text": "объяснение с цитатой", "suggestion": "альтернатива"}],
+  "strengths": ["сильная сторона с примером"],
+  "keyMoments": [{"label": "момент", "text": "что произошло"}],
+  "clientProfile": "портрет клиента",
+  "nextSession": "план следующей встречи",
+  "recommendations": ["рекомендация"]
+}
+Только JSON.`;
+    try {
+      const response = await this.chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], { maxTokens: 1000 });
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+      return null;
+    } catch (e) { return null; }
+  },
+
+  async analyzeTranscriptAI(text, context) {
+    const system = `Ты — Арина, супервизор-психолог с 15-летним стажем. Анализируешь реальные сессии. Говоришь прямо, живо, иногда с юмором — но всегда точно. Видишь то что терапевт не видит. Пишешь связным текстом без буллетов. Цитируешь конкретные фразы.`;
+    const ctx = context && context.trim() ? `
+Контекст: ${context}
+` : '';
+    const prompt = `Транскрибация сессии:${ctx}
+
+${text}
+
+Дай полный супервизорский разбор. Пиши как живой опытный супервизор — прямо, с характером, без пустых слов. Цитируй фразы из текста.
+
+Структура:
+
+**ЧТО СРАБОТАЛО**
+
+**ЧТО УПУСТИЛ**
+
+**КЛЮЧЕВЫЕ МОМЕНТЫ**
+
+**ПЛАН НА СЛЕДУЮЩУЮ ВСТРЕЧУ**`;
+    try {
+      const response = await this.chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], { maxTokens: 1500 });
+      return { freeText: response.trim() };
+    } catch (e) { return null; }
+  },
+
   async testConnection() {
     try {
-      const result = await this.chat([
-        { role: 'user', content: 'Ответь одним словом: "Работает"' }
-      ], { maxTokens: 10, temperature: 0 });
+      const result = await this.chat([{ role: 'user', content: 'Ответь одним словом: Работает' }], { maxTokens: 10 });
       return { ok: true, response: result };
-    } catch (e) {
-      return { ok: false, error: e.message };
-    }
+    } catch (e) { return { ok: false, error: e.message }; }
   },
 
-  // ===== ERROR MESSAGES =====
   getErrorMessage(code) {
-    const messages = {
-      'NO_KEY': 'Введите API-ключ OpenRouter для активации AI-функций',
-      'INVALID_KEY': 'Неверный API-ключ. Проверьте ключ на openrouter.ai',
-      'RATE_LIMIT': 'Превышен лимит запросов. Подождите минуту.',
-      'NO_CREDITS': 'Закончились кредиты OpenRouter. Пополните баланс на openrouter.ai',
-      'ALL_ENDPOINTS_FAILED': 'Не удалось подключиться. Проверьте интернет.',
-      'WHISPER_NOT_SUPPORTED': 'Транскрипция аудио: вставьте текст транскрипта вручную'
-    };
-    return messages[code] || code;
+    return { 'RATE_LIMIT': 'Превышен лимит. Подождите минуту.', 'NO_CREDITS': 'Ресурсы AI исчерпаны.' }[code] || 'Ошибка соединения';
   }
 };
 
-// Auto-init
 document.addEventListener('DOMContentLoaded', () => AIEngine.init());
