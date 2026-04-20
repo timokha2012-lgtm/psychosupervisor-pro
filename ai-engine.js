@@ -37,7 +37,7 @@ const AIEngine = {
   },
 
   // ===== KEY MANAGEMENT =====
-  DEFAULT_KEY: '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',
+  DEFAULT_KEY: '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',
 
   loadKey() {
     return localStorage.getItem('psp_openrouter_key') || this.DEFAULT_KEY;
