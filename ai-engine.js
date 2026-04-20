@@ -8,11 +8,11 @@ const AIEngine = {
 
   // ===== CONFIG =====
   // OpenRouter.ai — работает из России, CORS разрешён, оплата картой РФ
-  ENDPOINT: 'https://psychosupervisor-proxy-production.up.railway.app/api/chat',
+  ENDPOINT: 'https://psych-trainer-v2.vercel.app/api/claude',
 
-  // Прокси-сервер (ключ OpenRouter встроен на сервере)
+  // Anthropic Claude API через Vercel (качество выше чем OpenRouter)
   ENDPOINTS: [
-    'https://psychosupervisor-proxy-production.up.railway.app/api/chat',
+    'https://psych-trainer-v2.vercel.app/api/claude',
   ],
 
   // Рекомендуемые модели (дешевле → дороже)
@@ -37,7 +37,7 @@ const AIEngine = {
   },
 
   // ===== KEY MANAGEMENT =====
-  DEFAULT_KEY: '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',
+  DEFAULT_KEY: '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',
 
   loadKey() {
     return localStorage.getItem('psp_openrouter_key') || this.DEFAULT_KEY;
@@ -68,12 +68,14 @@ const AIEngine = {
       throw new Error('NO_KEY');
     }
 
+    // Anthropic API format
+    const msgs = messages.filter(m => m.role !== 'system');
+    const systemMsg = messages.find(m => m.role === 'system');
     const body = {
-      model: options.model || this._model,
-      messages,
+      model: 'claude-sonnet-4-20250514',
       max_tokens: options.maxTokens || 500,
-      temperature: options.temperature ?? 0.8,
-      stream: false
+      system: systemMsg ? systemMsg.content : undefined,
+      messages: msgs,
     };
 
     let lastError = null;
@@ -102,6 +104,9 @@ const AIEngine = {
 
         const data = await resp.json();
         this._requestCount++;
+        // Anthropic format
+        if (data.content) return data.content.map(b => b.text || '').join('');
+        // OpenRouter fallback
         return data.choices?.[0]?.message?.content || '';
 
       } catch (e) {
