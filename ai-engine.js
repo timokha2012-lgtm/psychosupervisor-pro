@@ -20,7 +20,7 @@ const AIEngine = {
     const systemMsg = messages.find(m => m.role === 'system');
     const userMsgs = messages.filter(m => m.role !== 'system');
     const body = {
-      model: 'claude-sonnet-4-20250514',
+      model: 'anthropic/claude-3-5-sonnet',
       max_tokens: options.maxTokens || 600,
       system: systemMsg ? systemMsg.content : undefined,
       messages: userMsgs,
