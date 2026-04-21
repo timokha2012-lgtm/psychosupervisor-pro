@@ -27,7 +27,7 @@ const App = {
       score: 50
     },
     charts: { progress: null, skills: null },
-    selectedModel: 'google/gemini-flash-1.5',
+    selectedModel: 'anthropic/claude-3-5-sonnet',
     aiEnabled: false
   },
 
