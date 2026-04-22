@@ -1,207 +1,219 @@
-/* ============================================
-   PsychoSupervisor Pro — AI Engine v3
-   Anthropic Claude API через Vercel прокси
-   ============================================ */
+/* ═══════════════════════════════════════════════════════════════════
+   Engine v3 — AI-запросы через Railway proxy с PSP-аутентификацией
+   
+   Изменения:
+   - Передаём X-PSP-Key (ключ подписки) в каждый запрос к прокси
+   - Прокси валидирует ключ в Supabase перед форвардингом
+   - X-Client-Key (Anthropic key) — по-прежнему поддерживается
+   ═══════════════════════════════════════════════════════════════════ */
+const Engine = {
 
-const AIEngine = {
+  PROXY:    'https://psychosupervisor-proxy-production.up.railway.app/',
+  LS_KEY:   'psp2_anthropic_key',
 
-  ENDPOINT: 'https://psych-trainer-v2.vercel.app/api/claude',
-  _requestCount: 0,
+  MODELS: {
+    supervisor: 'claude-sonnet-4-20250514',
+    client:     'claude-haiku-4-20250514',
+    fast:       'claude-haiku-4-20250514',
+    vision:     'claude-sonnet-4-20250514',
+  },
 
-  init() {},
+  ALL_MODELS: [
+    'claude-sonnet-4-20250514',
+    'claude-haiku-4-20250514',
+    'claude-3-7-sonnet-20250219',
+    'claude-3-5-sonnet-20241022',
+    'claude-3-5-haiku-20241022',
+  ],
 
-  hasKey() { return true; },
-  saveKey(key) { localStorage.setItem('psp_openrouter_key', key.trim()); },
-  loadKey() { return localStorage.getItem('psp_openrouter_key') || ''; },
-  clearKey() { localStorage.removeItem('psp_openrouter_key'); },
-  setModel(model) { localStorage.setItem('psp_model', model); },
+  _working:    null,
+  _proxyKeyOk: null,
 
-  async chat(messages, options = {}) {
-    const systemMsg = messages.find(m => m.role === 'system');
-    const userMsgs = messages.filter(m => m.role !== 'system');
+  init() {
+    const hasKey = this.hasClientKey();
+    const hasPsp = typeof Access !== 'undefined' && Access.getPspKey();
+    console.log(`[Engine] init | clientKey=${hasKey} | pspKey=${!!hasPsp} | proxy=${this.PROXY}`);
+    setTimeout(() => this._pingProxy(), 3000);
+    // Тихая ревалидация PSP-ключа
+    if (typeof Access !== 'undefined') {
+      setTimeout(() => Access.silentRevalidate(), 5000);
+    }
+    return this;
+  },
+
+  getKey()      { try { return localStorage.getItem(this.LS_KEY) || ''; } catch(e) { return ''; } },
+  saveKey(k)    { try { localStorage.setItem(this.LS_KEY, (k||'').trim()); } catch(e) {} },
+  clearKey()    { try { localStorage.removeItem(this.LS_KEY); } catch(e) {} },
+  hasClientKey(){ return this.getKey().length > 20; },
+
+  isReady() {
+    if (this.hasClientKey()) return true;
+    if (typeof Access !== 'undefined' && Access.hasAccess()) return true;
+    return this._proxyKeyOk !== false;
+  },
+
+  async _pingProxy() {
+    try {
+      const r = await fetch(this.PROXY, { signal: AbortSignal.timeout(4000) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        this._proxyKeyOk = d.key_set !== false;
+        console.log(`[Engine] ✅ proxy OK | supabase=${d.supabase} key_set=${d.key_set}`);
+      } else {
+        this._proxyKeyOk = false;
+      }
+    } catch(e) {
+      console.warn('[Engine] proxy ping failed:', e.message);
+      this._proxyKeyOk = false;
+    }
+    UI && UI.updateAIStatus && UI.updateAIStatus();
+  },
+
+  /* ════════════════════════════════════════════════════════════════
+     БАЗОВЫЙ CHAT — теперь передаёт X-PSP-Key
+  ════════════════════════════════════════════════════════════════ */
+  async chat(system, messages, opts = {}) {
+    const preferred = opts.model || this._working || this.MODELS.supervisor;
+    const models    = [preferred, ...this.ALL_MODELS.filter(m => m !== preferred)];
+    const uniq      = [...new Set(models)];
+
+    const msgs = (messages || [])
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({ role: m.role, content: m.content || m.text || '' }));
+    if (!msgs.length || msgs[msgs.length-1].role !== 'user') {
+      msgs.push({ role: 'user', content: 'Продолжай.' });
+    }
+
+    for (const model of uniq) {
+      try {
+        const result = await this._request(system, msgs, model, opts.maxTokens || 1000);
+        this._working = model;
+        return result;
+      } catch(err) {
+        const code = err.code || 0;
+        // 403 = PSP-ключ невалиден — не пробуем другие модели, сразу кидаем
+        if (code === 403) throw err;
+        // 5xx — пробуем следующую модель
+        if (code >= 500 || err.message?.includes('overloaded')) continue;
+        throw err;
+      }
+    }
+    throw new Error('Все модели недоступны. Попробуйте позже.');
+  },
+
+  async _request(system, messages, model, maxTokens) {
     const body = {
-      model: 'anthropic/claude-3-5-sonnet',
-      max_tokens: options.maxTokens || 600,
-      system: systemMsg ? systemMsg.content : undefined,
-      messages: userMsgs,
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages,
     };
-    try {
-      const resp = await fetch(this.ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(45000)
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.error?.message || `HTTP ${resp.status}`);
+
+    // Заголовки аутентификации
+    const headers = { 'Content-Type': 'application/json' };
+
+    // 1. Клиентский Anthropic-ключ (приоритет)
+    if (this.hasClientKey()) {
+      headers['X-Client-Key'] = this.getKey();
+    }
+    // 2. PSP-ключ подписки (для серверного ключа прокси)
+    else if (typeof Access !== 'undefined' && Access.getPspKey()) {
+      headers['X-PSP-Key'] = Access.getPspKey();
+    }
+
+    const resp = await fetch(this.PROXY, {
+      method:  'POST',
+      headers,
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(90000),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+
+      // Специальная обработка ошибки PSP-ключа
+      if (resp.status === 403) {
+        const e = new Error(err.error || 'Ключ доступа недействителен');
+        e.code = 403;
+        e.pspError = true;
+        // Показываем модал повторной активации
+        UI && UI.showAccessExpired && UI.showAccessExpired(err.error);
+        throw e;
       }
-      const data = await resp.json();
-      this._requestCount++;
-      if (data.content) return data.content.map(b => b.text || '').join('');
-      return data.choices?.[0]?.message?.content || '';
-    } catch (e) { throw e; }
-  },
 
-  async generateClientResponse(client, sessionMessages, studentMessage, sessionState) {
-    const trustPct = sessionState.trust || client.trust;
-    const anxietyPct = sessionState.anxiety || client.anxiety;
-    const opennessPct = sessionState.openness || client.openness;
-    const system = `Ты играешь роль клиента на психологической консультации. Веди себя СТРОГО по роли.
-
-ПРОФИЛЬ:
-- Имя: ${client.name}, ${client.age}
-- Проблема: ${client.type}
-- Запрос: ${client.request}
-- История: ${client.history}
-- Черты: ${client.traits.join(', ')}
-
-СОСТОЯНИЕ:
-- Тревога: ${anxietyPct}% ${anxietyPct > 70 ? '(очень высокая)' : anxietyPct > 40 ? '(умеренная)' : '(низкая)'}
-- Доверие: ${trustPct}% ${trustPct < 30 ? '(низкое — закрыт)' : trustPct < 60 ? '(среднее)' : '(высокое — открыт)'}
-- Открытость: ${opennessPct}%
-
-ПРАВИЛА: 2-4 предложения. Разговорный русский. Сопротивляйся советам. Периодически "(молчит)", "(вздыхает)". ОБЯЗАТЕЛЬНО заканчивай мысль.
-Отвечай только репликой клиента, без кавычек.`;
-
-    const history = sessionMessages.slice(-20).map(m => ({
-      role: m.role === 'student' ? 'user' : 'assistant',
-      content: m.text
-    }));
-    history.push({ role: 'user', content: studentMessage });
-
-    try {
-      const response = await this.chat([{ role: 'system', content: system }, ...history], { maxTokens: 350 });
-      let text = response.trim();
-      if (text && !text.match(/[.!?…)"'
-]$/)) {
-        const lastPunct = Math.max(text.lastIndexOf('.'), text.lastIndexOf('!'), text.lastIndexOf('?'));
-        if (lastPunct > text.length * 0.5) text = text.substring(0, lastPunct + 1);
-        else text = text + '...';
+      if (resp.status === 401) {
+        const e = new Error('Требуется ключ доступа PSP');
+        e.code = 401;
+        throw e;
       }
-      return text;
-    } catch (e) { return null; }
+
+      const e = new Error(err.error?.message || err.error || `HTTP ${resp.status}`);
+      e.code = resp.status;
+      throw e;
+    }
+
+    const data = await resp.json();
+    const text = data.content
+      ?.filter(b => b.type === 'text')
+      ?.map(b => b.text)
+      ?.join('') || '';
+
+    if (!text) throw new Error('Пустой ответ от AI');
+    return text;
   },
 
-  async generateSupervisorHint(client, sessionMessages, studentMessage, sessionState) {
-    const trust = sessionState.trust || client.trust;
-    const anxiety = sessionState.anxiety || client.anxiety;
-    const phase = sessionState.phase || 'contact';
-    const phaseLabels = { contact: 'установление контакта', exploration: 'исследование', insight: 'инсайт', change: 'изменение' };
-    const system = `Ты — Арина, супервизор-психолог 15 лет стажа. Прямо, живо, одна подсказка как живой человек смотрит через плечо. 1-2 предложения без буллетов.
-Клиент: ${client.name}, ${client.age}. Проблема: ${client.type}. Фаза: ${phaseLabels[phase]}. Доверие: ${trust}%. Тревога: ${anxiety}%.`;
-    const lastExchanges = sessionMessages.slice(-6).map(m => `${m.role === 'student' ? 'Психолог' : 'Клиент'}: ${m.text}`).join('
-');
-    try {
-      const response = await this.chat([
-        { role: 'system', content: system },
-        { role: 'user', content: `${lastExchanges}
+  /* Vision — для арт-терапии */
+  async vision(system, imageBase64, mediaType, textPrompt, opts = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.hasClientKey()) {
+      headers['X-Client-Key'] = this.getKey();
+    } else if (typeof Access !== 'undefined' && Access.getPspKey()) {
+      headers['X-PSP-Key'] = Access.getPspKey();
+    }
 
-Психолог написал: "${studentMessage}"
+    const body = {
+      model:      opts.model || this.MODELS.vision,
+      max_tokens: opts.maxTokens || 1500,
+      system,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+          { type: 'text', text: textPrompt },
+        ],
+      }],
+    };
 
-Одна подсказка:` }
-      ], { maxTokens: 120 });
-      return '💡 ' + response.trim();
-    } catch (e) { return null; }
+    const resp = await fetch(this.PROXY, {
+      method:  'POST',
+      headers,
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(120000),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+      if (resp.status === 403) {
+        UI && UI.showAccessExpired && UI.showAccessExpired(err.error);
+        throw new Error('Ключ доступа недействителен');
+      }
+      throw new Error(err.error?.message || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    return data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
   },
 
-  async generateSupervisorAdvice(client, sessionMessages, question, sessionState) {
-    const trust = sessionState.trust || client.trust;
-    const anxiety = sessionState.anxiety || client.anxiety;
-    const phase = sessionState.phase || 'contact';
-    const phaseLabels = { contact: 'установление контакта', exploration: 'исследование', insight: 'инсайт', change: 'изменение' };
-    const system = `Ты — Арина, супервизор-психолог 15 лет стажа. Прямо, живо, конкретный совет — что делать прямо сейчас. 2-4 предложения. Без буллетов.
-Клиент: ${client.name}, ${client.age}. Проблема: ${client.type}. Фаза: ${phaseLabels[phase]}. Доверие: ${trust}%. Тревога: ${anxiety}%.`;
-    const context = sessionMessages.slice(-12).map(m => {
-      if (m.role === 'student') return `Психолог: ${m.text}`;
-      if (m.role === 'client') return `Клиент: ${m.text}`;
-      return null;
-    }).filter(Boolean).join('
-');
-    const userMsg = question ? `Контекст:
-${context}
-
-Вопрос: "${question}"` : `Контекст:
-${context}
-
-Дай рекомендацию.`;
-    try {
-      const response = await this.chat([{ role: 'system', content: system }, { role: 'user', content: userMsg }], { maxTokens: 280 });
-      return response.trim();
-    } catch (e) { return null; }
+  /* Форматирование ошибок для UI */
+  errMsg(msg) {
+    if (!msg) return 'Ошибка AI';
+    if (msg.includes('403') || msg.includes('PSP') || msg.includes('ключ')) {
+      return '🔑 Ключ доступа истёк. Проверьте подписку.';
+    }
+    if (msg.includes('401')) return '🔑 Требуется ключ доступа';
+    if (msg.includes('overloaded') || msg.includes('529')) return '⏳ AI перегружен, повторите через минуту';
+    if (msg.includes('timeout') || msg.includes('AbortError')) return '⏱ Таймаут — попробуйте ещё раз';
+    if (msg.includes('rate') || msg.includes('429')) return '⚠️ Слишком много запросов, подождите';
+    return `AI: ${msg.slice(0, 80)}`;
   },
-
-  async analyzeSessionFull(client, sessionMessages, sessionState) {
-    const system = `Ты — Арина, супервизор-психолог 15 лет стажа. Разбор сессии — прямо, конкретно, с цитатами. Без буллетов. КПТ, МИ, DBT, ACT, духовное измерение.`;
-    const transcript = sessionMessages.filter(m => m.role !== 'system').map(m => {
-      if (m.role === 'client') return `КЛИЕНТ: ${m.text}`;
-      if (m.role === 'student') return `ПСИХОЛОГ: ${m.text}`;
-      return null;
-    }).filter(Boolean).join('
-');
-    const prompt = `Клиент: ${client.name}, ${client.age}. Тип: ${client.type}. Запрос: ${client.request}.
-
-ТРАНСКРИПТ:
-${transcript}
-
-JSON разбор:
-{
-  "score": число 0-100,
-  "summary": "3-4 предложения о сессии",
-  "worked": "ЧТО СРАБОТАЛО с цитатами",
-  "missed": "ЧТО УПУСТИЛ с цитатами",
-  "errors": [{"title": "ошибка", "text": "объяснение с цитатой", "suggestion": "альтернатива"}],
-  "strengths": ["сильная сторона с примером"],
-  "keyMoments": [{"label": "момент", "text": "что произошло"}],
-  "clientProfile": "портрет клиента",
-  "nextSession": "план следующей встречи",
-  "recommendations": ["рекомендация"]
-}
-Только JSON.`;
-    try {
-      const response = await this.chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], { maxTokens: 1000 });
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) return JSON.parse(jsonMatch[0]);
-      return null;
-    } catch (e) { return null; }
-  },
-
-  async analyzeTranscriptAI(text, context) {
-    const system = `Ты — Арина, супервизор-психолог с 15-летним стажем. Анализируешь реальные сессии. Говоришь прямо, живо, иногда с юмором — но всегда точно. Видишь то что терапевт не видит. Пишешь связным текстом без буллетов. Цитируешь конкретные фразы.`;
-    const ctx = context && context.trim() ? `
-Контекст: ${context}
-` : '';
-    const prompt = `Транскрибация сессии:${ctx}
-
-${text}
-
-Дай полный супервизорский разбор. Пиши как живой опытный супервизор — прямо, с характером, без пустых слов. Цитируй фразы из текста.
-
-Структура:
-
-**ЧТО СРАБОТАЛО**
-
-**ЧТО УПУСТИЛ**
-
-**КЛЮЧЕВЫЕ МОМЕНТЫ**
-
-**ПЛАН НА СЛЕДУЮЩУЮ ВСТРЕЧУ**`;
-    try {
-      const response = await this.chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], { maxTokens: 1500 });
-      return { freeText: response.trim() };
-    } catch (e) { return null; }
-  },
-
-  async testConnection() {
-    try {
-      const result = await this.chat([{ role: 'user', content: 'Ответь одним словом: Работает' }], { maxTokens: 10 });
-      return { ok: true, response: result };
-    } catch (e) { return { ok: false, error: e.message }; }
-  },
-
-  getErrorMessage(code) {
-    return { 'RATE_LIMIT': 'Превышен лимит. Подождите минуту.', 'NO_CREDITS': 'Ресурсы AI исчерпаны.' }[code] || 'Ошибка соединения';
-  }
 };
-
-document.addEventListener('DOMContentLoaded', () => AIEngine.init());
