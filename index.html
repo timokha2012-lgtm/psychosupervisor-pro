@@ -1471,15 +1471,15 @@ const Supervisor={getHint(client,sessionState,studentMessage,messageCount){const
 const AIEngine={
   PROXY:'https://psychosupervisor-proxy-production.up.railway.app/',
   MODELS:{
-    free:'claude-haiku-4-20250514',
-    fast:'claude-haiku-4-20250514',
+    free:'claude-haiku-4-5-20251001',
+    fast:'claude-haiku-4-5-20251001',
     smart:'claude-sonnet-4-20250514',
     premium:'claude-sonnet-4-20250514',
     ultra:'claude-sonnet-4-20250514',
     supervisor:'claude-sonnet-4-20250514',
-    client:'claude-haiku-4-20250514'
+    client:'claude-haiku-4-5-20251001'
   },
-  _model:'claude-haiku-4-20250514',
+  _model:'claude-haiku-4-5-20251001',
   _requestCount:0,
   init(){
     const saved=localStorage.getItem('psp_model');
