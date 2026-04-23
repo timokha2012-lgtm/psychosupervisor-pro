@@ -8,7 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style id="main-styles">
 /* PsychoSupervisor Pro — Inline Styles */
-:root{--primary:#6C63FF;--primary-dark:#5A52E8;--primary-light:#EEF0FF;--accent:#FF6584;--accent-2:#43D9AD;--accent-3:#FFB347;--bg:#F8F9FF;--bg-card:#FFFFFF;--bg-secondary:#F3F4F6;--bg-dark:#1A1A2E;--bg-dark-2:#16213E;--bg-dark-3:#0F3460;--text:#1E1E3F;--text-2:#6B7280;--text-light:#9CA3AF;--border:#E5E7EB;--border-dark:#374151;--shadow:0 4px 24px rgba(108,99,255,0.1);--shadow-lg:0 12px 40px rgba(108,99,255,0.18);--radius:16px;--radius-sm:10px;--radius-xs:6px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;--font-display:Georgia,'Times New Roman',serif;--transition:0.2s cubic-bezier(0.4,0,0.2,1)}
+:root{--primary:#2D3A8C;--primary-dark:#1E2B6F;--primary-light:#EEF1FF;--accent:#C0392B;--accent-2:#1B6B4A;--accent-3:#B7791F;--bg:#F5F0EB;--bg-card:#FDFAF7;--bg-secondary:#EDE8E1;--bg-dark:#1C1F2E;--bg-dark-2:#151825;--bg-dark-3:#0D1018;--text:#1A1A2E;--text-2:#5C5C7A;--text-light:#9CA3AF;--border:#DDD8D0;--border-dark:#374151;--shadow:0 4px 24px rgba(45,58,140,0.08);--shadow-lg:0 12px 40px rgba(45,58,140,0.14);--radius:16px;--radius-sm:10px;--radius-xs:6px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;--font-display:Georgia,'Times New Roman',serif;--transition:0.2s cubic-bezier(0.4,0,0.2,1)}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
@@ -28,9 +28,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 .mt-2{margin-top:10px}
 .text-accent{color:var(--accent)}
 .text-red{color:#ef4444}
-.gradient-text{background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.gradient-text{background:linear-gradient(135deg,#2D3A8C,#1B6B4A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .page{min-height:100vh}
-.splash-screen{min-height:100vh;background:linear-gradient(135deg,var(--bg-dark) 0%,var(--bg-dark-2) 50%,var(--bg-dark-3) 100%);display:flex;align-items:center;justify-content:center;text-align:center;position:relative;overflow:hidden}
+.splash-screen{min-height:100vh;background:linear-gradient(135deg,#1C1F2E 0%,#151825 50%,#0D1018 100%);display:flex;align-items:center;justify-content:center;text-align:center;position:relative;overflow:hidden}
 .splash-screen::before{content:'';position:absolute;width:600px;height:600px;background:radial-gradient(circle,rgba(108,99,255,0.2) 0%,transparent 70%);top:-100px;right:-100px;border-radius:50%}
 .splash-content{position:relative;z-index:2;max-width:640px;padding:40px 24px}
 .splash-logo{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:24px}
@@ -43,7 +43,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 .stat-item{text-align:center}
 .stat-num{display:block;font-size:28px;font-weight:800;color:#fff}
 .stat-lbl{font-size:13px;color:rgba(255,255,255,0.5)}
-.nav-bar{position:sticky;top:0;z-index:100;background:rgba(255,255,255,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:16px 48px;display:flex;align-items:center;gap:32px}
+.nav-bar{position:sticky;top:0;z-index:100;background:rgba(245,240,235,0.97);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:16px 48px;display:flex;align-items:center;gap:32px}
 .nav-logo{font-size:18px;font-weight:800;color:var(--primary);display:flex;align-items:center;gap:8px;cursor:pointer}
 .nav-logo span{color:var(--accent)}
 .nav-links{display:flex;gap:28px;flex:1;justify-content:center}
@@ -56,7 +56,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 .hero-buttons{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:32px}
 .hero-trust{display:flex;gap:20px;flex-wrap:wrap}
 .hero-trust span{font-size:13px;color:var(--text-2);display:flex;align-items:center;gap:6px}
-.hero-trust i{color:var(--primary)}
+.hero-trust i{color:#1B6B4A}
 .hero-visual{position:relative;display:flex;justify-content:center;align-items:center}
 .phone-mockup{width:320px;height:520px;background:linear-gradient(145deg,#1A1A2E,#16213E);border-radius:40px;box-shadow:0 32px 80px rgba(0,0,0,0.3),0 0 0 2px rgba(255,255,255,0.1);overflow:hidden;padding:20px;position:relative}
 .phone-screen{height:100%;display:flex;flex-direction:column;gap:12px}
@@ -79,7 +79,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
 .feature-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:28px;transition:all var(--transition)}
 .feature-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-4px);border-color:var(--primary)}
-.feature-card--highlight{background:linear-gradient(135deg,var(--bg-dark) 0%,var(--bg-dark-2) 100%);border-color:transparent}
+.feature-card--highlight{background:linear-gradient(135deg,#1C1F2E 0%,#2D3A8C 100%);border-color:transparent}
 .feature-card--highlight h3,.feature-card--highlight p{color:#fff !important}
 .feature-card--highlight .feature-tags span{background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8)}
 .feature-icon{font-size:28px;color:var(--primary);margin-bottom:16px}
@@ -113,7 +113,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 .footer-logo span{color:var(--accent)}
 .footer p{font-size:14px;margin-bottom:8px}
 .footer-copy{font-size:12px;margin-top:16px;opacity:0.5}
-.app-header{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;height:64px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:50;box-shadow:0 2px 16px rgba(0,0,0,0.06)}
+.app-header{background:#FDFAF7;border-bottom:1px solid var(--border);padding:0 24px;height:64px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:50;box-shadow:0 2px 16px rgba(0,0,0,0.06)}
 .app-logo{font-size:18px;font-weight:800;color:var(--primary);cursor:pointer;display:flex;align-items:center;gap:8px;min-width:80px}
 .app-nav{flex:1;display:flex;justify-content:center;gap:4px}
 .nav-btn{background:none;border:none;cursor:pointer;padding:8px 16px;border-radius:10px;font-family:var(--font);font-size:14px;font-weight:500;color:var(--text-2);display:flex;align-items:center;gap:6px;transition:all var(--transition)}
@@ -126,7 +126,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 .tab-content{min-height:calc(100vh - 64px)}
 .tab-content.active{display:block}
 .dashboard-container{max-width:1200px;margin:0 auto;padding:32px 24px}
-.welcome-banner{background:linear-gradient(135deg,var(--bg-dark),var(--bg-dark-3));border-radius:var(--radius);padding:32px 36px;display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;gap:20px}
+.welcome-banner{background:linear-gradient(135deg,#1C1F2E,#2D3A8C);border-radius:var(--radius);padding:32px 36px;display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;gap:20px}
 .welcome-text h2{color:#fff;font-size:22px;margin-bottom:6px}
 .welcome-text p{color:rgba(255,255,255,0.6);font-size:15px}
 .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
@@ -295,7 +295,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 .result-header h3{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
 .progress-container{max-width:960px;margin:0 auto;padding:32px 24px}
 .progress-container h2{font-size:24px;font-weight:700;margin-bottom:24px;display:flex;align-items:center;gap:10px}
-.level-banner{background:linear-gradient(135deg,var(--bg-dark),var(--bg-dark-3));border-radius:var(--radius);padding:28px 32px;display:flex;align-items:center;gap:32px;margin-bottom:28px}
+.level-banner{background:linear-gradient(135deg,#1C1F2E,#2D3A8C);border-radius:var(--radius);padding:28px 32px;display:flex;align-items:center;gap:32px;margin-bottom:28px}
 .level-info{display:flex;align-items:center;gap:16px}
 .level-icon{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));display:flex;align-items:center;justify-content:center;font-size:26px;color:#fff}
 .level-title{font-size:20px;font-weight:700;color:#fff}
@@ -430,7 +430,7 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
 .faq-item.open .faq-icon{transform:rotate(90deg)}
 .faq-a{padding:0 20px;font-size:14px;color:var(--text-2);line-height:1.7;max-height:0;overflow:hidden;transition:all 0.3s ease}
 .faq-item.open .faq-a{padding:0 20px 16px;max-height:200px}
-.cta-section{background:linear-gradient(135deg,var(--bg-dark) 0%,var(--bg-dark-3) 100%);padding:80px 48px;text-align:center;position:relative;overflow:hidden}
+.cta-section{background:linear-gradient(135deg,#1C1F2E 0%,#2D3A8C 100%);padding:80px 48px;text-align:center;position:relative;overflow:hidden}
 .cta-section::before{content:'';position:absolute;width:500px;height:500px;background:radial-gradient(circle,rgba(108,99,255,0.25) 0%,transparent 70%);top:-100px;left:50%;transform:translateX(-50%);border-radius:50%}
 .cta-content{position:relative;z-index:1;max-width:640px;margin:0 auto}
 .cta-content h2{font-family:var(--font-display);font-size:42px;color:#fff;margin-bottom:16px}
@@ -525,7 +525,7 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
 </head>
 <body>
 <!-- ===== SPLASH / ONBOARDING ===== -->
-<div id="splash-screen" class="splash-screen">
+<div id="splash-screen" class="splash-screen hidden">
 <div class="splash-content">
 <div class="splash-logo">
 <div class="logo-icon"><i class="fas fa-brain"></i></div>
@@ -548,7 +548,7 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
 </div>
 </div>
 <!-- ===== LANDING PAGE ===== -->
-<div id="landing-page" class="page hidden">
+<div id="landing-page" class="page">
 <!-- HERO -->
 <nav class="nav-bar">
 <div class="nav-logo"><i class="fas fa-brain"></i> PsychoSupervisor<span>Pro</span></div>
@@ -557,19 +557,19 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
 <a href="#howworks">Как работает</a>
 <a href="#pricing">Тарифы</a>
 </div>
-<button class="btn-primary" onclick="App.enterOrActivate()">Войти в тренажёр</button>
+<button class="btn-primary" onclick="App.startDemo()"><i class="fas fa-play-circle"></i> Начать бесплатно</button>
 </nav>
 <section class="hero-section">
 <div class="hero-text">
-<div class="hero-badge"><i class="fas fa-fire"></i> 5 сессий бесплатно — AI включён</div>
-<h1>Ты облажаешься<br/>на <span class="gradient-text">первом клиенте.</span><br/>Или здесь.</h1>
-<p style="font-size:17px;line-height:1.8">Первая реальная сессия без подготовки — это стресс, ошибки и риск навредить. PSP даёт живую практику с AI-клиентами, супервизором Ариной и разбором каждого хода. 24/7, без ожидания.</p>
-<div style="background:rgba(67,217,173,0.1);border:1.5px solid rgba(67,217,173,0.4);border-radius:12px;padding:14px 18px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:12px">
-<i class="fas fa-gift" style="color:var(--accent-2);font-size:20px"></i>
+<div class="hero-badge" style="background:rgba(27,107,74,0.1);color:#1B6B4A;border:1px solid rgba(27,107,74,0.25)"><i class="fas fa-shield-alt"></i> 5 сессий бесплатно · AI включён</div>
+<h1 style="font-size:48px;line-height:1.25">Супервизор видит<br/>то, что <span class="gradient-text">ты пропустил.</span><br/><span style="font-size:36px;opacity:0.7">18 клиентов. Ни один не пострадает.</span></h1>
+<p style="font-size:16px;line-height:1.9;color:var(--text-2)">PSP — тренажёр для психологов, где можно ошибаться, учиться и расти. AI-клиенты с реальными историями, супервизор Арина разбирает каждый ход, арт-терапевт Марина анализирует рисунки. 24/7, без ожидания.</p>
+<div style="background:rgba(27,107,74,0.08);border:1.5px solid rgba(27,107,74,0.3);border-radius:12px;padding:14px 18px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:12px">
+<i class="fas fa-gift" style="color:#1B6B4A;font-size:20px"></i>
 <div><strong style="display:block;font-size:15px">5 полных сессий бесплатно</strong><span style="color:var(--text-2)">AI-клиенты + Супервизор Арина + Арт-терапевт Марина — всё включено</span></div>
 </div>
 <div class="hero-buttons">
-<button class="btn-primary btn-lg" style="background:linear-gradient(135deg,#43D9AD,#22c55e);font-size:16px;padding:16px 36px" onclick="App.startDemo()"><i class="fas fa-play-circle"></i> Начать 5 бесплатных сессий</button>
+<button class="btn-primary btn-lg" style="background:linear-gradient(135deg,#1B6B4A,#145238);font-size:16px;padding:16px 36px;box-shadow:0 6px 24px rgba(27,107,74,0.3)" onclick="App.startDemo()"><i class="fas fa-play-circle"></i> Начать 5 бесплатных сессий</button>
 </div>
 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
 <span style="font-size:12px;color:var(--text-2);display:flex;align-items:center;gap:4px"><i class="fas fa-check" style="color:var(--accent-2)"></i> Без регистрации</span>
